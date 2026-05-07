@@ -3,7 +3,7 @@
  * Run: node scripts/test-agents.mjs
  */
 
-const BASE = "http://localhost:3001";
+const BASE = process.env.RANKMIND_URL ?? "http://localhost:3001";
 
 async function post(path, body) {
   const res = await fetch(`${BASE}${path}`, {
