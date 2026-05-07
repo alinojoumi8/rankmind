@@ -1,6 +1,5 @@
 import OpenAI from "openai";
 
-// MiniMax M2.7 is OpenAI-compatible — just swap the base URL and key
 export const minimaxClient = new OpenAI({
   apiKey: process.env.MINIMAX_API_KEY!,
   baseURL: "https://api.minimax.io/v1",
@@ -11,6 +10,34 @@ export const MINIMAX_MODEL = "MiniMax-M2.7";
 export interface MinimaxMessage {
   role: "system" | "user" | "assistant";
   content: string;
+}
+
+// Strip <think>...</think> reasoning blocks that M2.7 prepends to answers
+function stripThinking(text: string): string {
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+}
+
+// Extract first JSON object/array from text (handles markdown code fences too)
+export function extractJson(text: string): string {
+  const stripped = stripThinking(text);
+  // Remove ```json ... ``` markdown fences
+  const fenceMatch = stripped.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenceMatch) return fenceMatch[1].trim();
+  // Find first { or [ and match to its closing counterpart
+  const start = stripped.search(/[{\[]/);
+  if (start === -1) return stripped;
+  // Walk forward to find matching close
+  const opener = stripped[start];
+  const closer = opener === "{" ? "}" : "]";
+  let depth = 0;
+  for (let i = start; i < stripped.length; i++) {
+    if (stripped[i] === opener) depth++;
+    else if (stripped[i] === closer) {
+      depth--;
+      if (depth === 0) return stripped.slice(start, i + 1);
+    }
+  }
+  return stripped.slice(start);
 }
 
 export async function minimaxChat(
@@ -27,7 +54,8 @@ export async function minimaxChat(
     ...(jsonMode && { response_format: { type: "json_object" } }),
   });
 
-  return response.choices[0]?.message?.content ?? "";
+  const content = response.choices[0]?.message?.content ?? "";
+  return jsonMode ? extractJson(content) : stripThinking(content);
 }
 
 // Streaming version for long content generation
@@ -52,5 +80,5 @@ export async function minimaxStream(
     full += text;
     if (text) onChunk(text);
   }
-  return full;
+  return stripThinking(full);
 }
