@@ -44,15 +44,12 @@ export async function GET(req: NextRequest) {
   ]);
 
   // Compute citation share per LLM
-  const citationsByLlm = citations.reduce<Record<string, { total: number; cited: number }>>(
-    (acc, c) => {
-      if (!acc[c.llm]) acc[c.llm] = { total: 0, cited: 0 };
-      acc[c.llm].total++;
-      if (c.cited) acc[c.llm].cited++;
-      return acc;
-    },
-    {}
-  );
+  const citationsByLlm: Record<string, { total: number; cited: number }> = {};
+  for (const c of citations) {
+    if (!citationsByLlm[c.llm]) citationsByLlm[c.llm] = { total: 0, cited: 0 };
+    citationsByLlm[c.llm].total++;
+    if (c.cited) citationsByLlm[c.llm].cited++;
+  }
 
   const llmCitationShare = Object.entries(citationsByLlm).map(([llm, v]) => ({
     llm,
