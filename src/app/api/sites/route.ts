@@ -41,24 +41,38 @@ export async function POST(req: NextRequest) {
 
   const { domain, name, industry, keywords, userId } = parsed.data;
 
-  // Ensure user exists (create demo user if needed)
-  await prisma.user.upsert({
-    where: { id: userId },
-    update: {},
-    create: { id: userId, email: `${userId}@demo.rankmind.ai`, name: "Demo User" },
-  });
+  try {
+    await prisma.user.upsert({
+      where: { id: userId },
+      update: {},
+      create: { id: userId, email: `${userId}@demo.rankmind.ai`, name: "Demo User" },
+    });
 
-  const site = await prisma.site.upsert({
-    where: { userId_domain: { userId, domain } },
-    update: { name, industry, keywords: JSON.stringify(keywords ?? []) },
-    create: {
-      userId,
-      domain,
-      name,
-      industry,
-      keywords: JSON.stringify(keywords ?? []),
-    },
-  });
+    const site = await prisma.site.upsert({
+      where: { userId_domain: { userId, domain } },
+      update: { name, industry, keywords: JSON.stringify(keywords ?? []) },
+      create: {
+        userId,
+        domain,
+        name,
+        industry,
+        keywords: JSON.stringify(keywords ?? []),
+      },
+    });
 
-  return NextResponse.json({ site }, { status: 201 });
+    return NextResponse.json({ site }, { status: 201 });
+  } catch (e) {
+    const err = e as Error & { code?: string; meta?: unknown };
+    console.error("[/api/sites POST] error:", err.message, err.code, err.meta);
+    return NextResponse.json(
+      {
+        error: err.message,
+        code: err.code,
+        meta: err.meta,
+        hasTurso: !!process.env.TURSO_DATABASE_URL,
+        hasToken: !!process.env.TURSO_AUTH_TOKEN,
+      },
+      { status: 500 }
+    );
+  }
 }
