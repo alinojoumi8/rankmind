@@ -1,15 +1,31 @@
 import path from "path";
 import { PrismaClient } from "@prisma/client";
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 
 function createPrisma() {
+  const tursoUrl = process.env.TURSO_DATABASE_URL;
+  const tursoToken = process.env.TURSO_AUTH_TOKEN;
+
+  // Production / preview: Turso via libsql adapter
+  if (tursoUrl && tursoToken) {
+    // Lazy require so local dev doesn't load libsql native deps
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { PrismaLibSql } = require("@prisma/adapter-libsql");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { createClient } = require("@libsql/client");
+    const libsql = createClient({ url: tursoUrl, authToken: tursoToken });
+    const adapter = new PrismaLibSql(libsql);
+    return new PrismaClient({ adapter, log: ["error"] });
+  }
+
+  // Local dev: better-sqlite3 against ./dev.db
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { PrismaBetterSqlite3 } = require("@prisma/adapter-better-sqlite3");
   const projectRoot =
     process.env.npm_config_local_prefix ??
     process.env.RANKMIND_ROOT ??
     process.cwd();
   const dbPath = path.resolve(projectRoot, "dev.db").replace(/\\/g, "/");
   const url = `file:${dbPath}`;
-  console.log("[prisma] db url:", url);
   const adapter = new PrismaBetterSqlite3({ url });
   return new PrismaClient({
     adapter,
