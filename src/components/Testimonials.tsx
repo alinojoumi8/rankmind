@@ -113,9 +113,9 @@ export default function Testimonials() {
               </div>
 
               {/* Quote */}
-              <div className="relative mb-6 flex-1">
-                <Quote className="w-6 h-6 text-indigo-500/30 absolute -top-1 -left-1" />
-                <p className="text-sm text-slate-300 leading-relaxed pl-4">{t.quote}</p>
+              <div className="mb-6 flex-1">
+                <Quote className="w-5 h-5 text-indigo-500/40 mb-3" />
+                <p className="text-sm text-slate-300 leading-relaxed">{t.quote}</p>
               </div>
 
               {/* Metrics */}
