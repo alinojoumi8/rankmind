@@ -7,13 +7,9 @@ function createPrisma() {
 
   // Production / preview: Turso via libsql adapter
   if (tursoUrl && tursoToken) {
-    // Lazy require so local dev doesn't load libsql native deps
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { PrismaLibSql } = require("@prisma/adapter-libsql");
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { createClient } = require("@libsql/client");
-    const libsql = createClient({ url: tursoUrl, authToken: tursoToken });
-    const adapter = new PrismaLibSql(libsql);
+    const adapter = new PrismaLibSql({ url: tursoUrl, authToken: tursoToken });
     return new PrismaClient({ adapter, log: ["error"] });
   }
 

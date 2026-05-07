@@ -22,9 +22,7 @@ export default defineConfig({
     ? {
         adapter: async () => {
           const { PrismaLibSql } = await import("@prisma/adapter-libsql");
-          const { createClient } = await import("@libsql/client");
-          const libsql = createClient({ url: tursoUrl, authToken: tursoToken });
-          return new PrismaLibSql(libsql);
+          return new PrismaLibSql({ url: tursoUrl, authToken: tursoToken });
         },
       }
     : {}),
