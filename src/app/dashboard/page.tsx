@@ -468,6 +468,13 @@ export default function DashboardPage() {
 
         {/* Bottom */}
         <div className="pt-4 border-t border-white/5 space-y-1">
+          <Link
+            href="/billing"
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-400 hover:text-white hover:bg-white/5 transition-all"
+          >
+            <Zap className="w-4 h-4" />
+            Plans & Billing
+          </Link>
           <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-400 hover:text-white hover:bg-white/5 transition-all">
             <Settings className="w-4 h-4" />
             Settings

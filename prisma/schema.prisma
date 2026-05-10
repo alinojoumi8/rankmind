@@ -7,14 +7,20 @@ datasource db {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
-  name          String?
-  passwordHash  String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  sites         Site[]
-  sessions      Session[]
+  id                       String    @id @default(cuid())
+  email                    String    @unique
+  name                     String?
+  passwordHash             String?
+  // Billing
+  plan                     String    @default("free")   // free | growth | agency
+  stripeCustomerId         String?   @unique
+  stripeSubscriptionId     String?   @unique
+  stripeSubscriptionStatus String?                      // active | canceled | past_due | trialing
+  planCurrentPeriodEnd     DateTime?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+  sites                    Site[]
+  sessions                 Session[]
 }
 
 model Session {
