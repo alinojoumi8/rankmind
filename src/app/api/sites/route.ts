@@ -7,16 +7,34 @@ const createSiteSchema = z.object({
   name: z.string().min(1),
   industry: z.string().optional(),
   keywords: z.array(z.string()).optional(),
-  // For demo: userId passed directly. In production use session.
-  userId: z.string(),
+  userId: z.string(), // Clerk user ID (user_xxx) or legacy demo ID
+  // Optional Clerk profile fields — used to upsert a real User record
+  email: z.string().email().optional(),
+  displayName: z.string().optional(),
 });
 
-// GET /api/sites — list sites for a user
+// Ensure a User row exists for the given userId (idempotent)
+async function ensureUser(userId: string, email?: string, displayName?: string) {
+  await prisma.user.upsert({
+    where: { id: userId },
+    update: {},
+    create: {
+      id: userId,
+      email: email ?? `${userId}@clerk.rankmind.ai`,
+      name: displayName ?? null,
+    },
+  });
+}
+
+// GET /api/sites?userId=xxx — list sites for a user
 export async function GET(req: NextRequest) {
   const userId = req.nextUrl.searchParams.get("userId");
   if (!userId) {
     return NextResponse.json({ error: "userId required" }, { status: 400 });
   }
+
+  // Auto-create user row if this is a Clerk user hitting the API for the first time
+  await ensureUser(userId).catch(() => {});
 
   const sites = await prisma.site.findMany({
     where: { userId },
@@ -30,23 +48,19 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ sites });
 }
 
-// POST /api/sites — create a new site
+// POST /api/sites — create or update a site
 export async function POST(req: NextRequest) {
-  const body = await req.json();
-  const parsed = createSiteSchema.safeParse(body);
-
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  }
-
-  const { domain, name, industry, keywords, userId } = parsed.data;
-
   try {
-    await prisma.user.upsert({
-      where: { id: userId },
-      update: {},
-      create: { id: userId, email: `${userId}@demo.rankmind.ai`, name: "Demo User" },
-    });
+    const body = await req.json();
+    const parsed = createSiteSchema.safeParse(body);
+
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+    }
+
+    const { domain, name, industry, keywords, userId, email, displayName } = parsed.data;
+
+    await ensureUser(userId, email, displayName);
 
     const site = await prisma.site.upsert({
       where: { userId_domain: { userId, domain } },
@@ -64,15 +78,6 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     const err = e as Error & { code?: string; meta?: unknown };
     console.error("[/api/sites POST] error:", err.message, err.code, err.meta);
-    return NextResponse.json(
-      {
-        error: err.message,
-        code: err.code,
-        meta: err.meta,
-        hasTurso: !!process.env.TURSO_DATABASE_URL,
-        hasToken: !!process.env.TURSO_AUTH_TOKEN,
-      },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

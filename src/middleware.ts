@@ -1,23 +1,17 @@
-import { NextRequest, NextResponse } from "next/server";
+import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
-const SESSION_COOKIE = "rm_token";
+const isProtectedRoute = createRouteMatcher(["/dashboard(.*)"]);
 
-export function middleware(req: NextRequest) {
-  const { pathname } = req.nextUrl;
-
-  // Protect dashboard pages
-  if (pathname.startsWith("/dashboard")) {
-    const token = req.cookies.get(SESSION_COOKIE)?.value;
-    if (!token) {
-      const loginUrl = new URL("/login", req.url);
-      loginUrl.searchParams.set("from", pathname);
-      return NextResponse.redirect(loginUrl);
-    }
+export default clerkMiddleware(async (auth, req) => {
+  if (isProtectedRoute(req)) {
+    await auth.protect();
   }
-
-  return NextResponse.next();
-}
+});
 
 export const config = {
-  matcher: ["/dashboard/:path*"],
+  matcher: [
+    // Skip Next.js internals and static files
+    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
+    "/(api|trpc)(.*)",
+  ],
 };

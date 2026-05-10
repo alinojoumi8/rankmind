@@ -2,6 +2,7 @@
 
 import { useState, useEffect, FormEvent, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useUser, useClerk } from "@clerk/nextjs";
 import {
   Bot,
   TrendingUp,
@@ -33,12 +34,6 @@ import { cn } from "@/lib/utils";
 import Link from "next/link";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-
-interface User {
-  id: string;
-  name: string | null;
-  email: string;
-}
 
 interface Site {
   id: string;
@@ -103,17 +98,9 @@ function timeAgo(dateStr: string | null): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-function initials(name: string | null, email: string): string {
-  if (name) {
-    const parts = name.trim().split(" ");
-    return (parts[0][0] + (parts[1]?.[0] ?? "")).toUpperCase();
-  }
-  return email.slice(0, 2).toUpperCase();
-}
-
 // ── Add-Site Modal ────────────────────────────────────────────────────────────
 
-function AddSiteModal({ onClose, onCreated }: { onClose: () => void; onCreated: (site: Site) => void }) {
+function AddSiteModal({ userId, onClose, onCreated }: { userId: string; onClose: () => void; onCreated: (site: Site) => void }) {
   const [domain, setDomain] = useState("");
   const [name, setName] = useState("");
   const [industry, setIndustry] = useState("");
@@ -126,15 +113,11 @@ function AddSiteModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
     setError("");
     setLoading(true);
     try {
-      // Get current user first
-      const meRes = await fetch("/api/auth/me");
-      const { user } = await meRes.json();
-
       const res = await fetch("/api/sites", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userId: user.id,
+          userId,
           domain: domain.replace(/^https?:\/\//, "").replace(/\/$/, ""),
           name,
           industry,
@@ -231,10 +214,12 @@ function AddSiteModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
 
 export default function DashboardPage() {
   const router = useRouter();
+  const { user: clerkUser, isLoaded } = useUser();
+  const { signOut } = useClerk();
+
   const [activeTab, setActiveTab] = useState("overview");
   const tabs = ["overview", "agents", "content", "citations", "reports"];
 
-  const [user, setUser] = useState<User | null>(null);
   const [sites, setSites] = useState<Site[]>([]);
   const [currentSite, setCurrentSite] = useState<Site | null>(null);
   const [dashData, setDashData] = useState<DashData | null>(null);
@@ -249,14 +234,13 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
+    if (!isLoaded) return;
+    if (!clerkUser) { router.replace("/login"); return; }
+
     async function init() {
       try {
-        const meRes = await fetch("/api/auth/me");
-        if (!meRes.ok) { router.replace("/login"); return; }
-        const { user } = await meRes.json();
-        setUser(user);
-
-        const sitesRes = await fetch(`/api/sites?userId=${user.id}`);
+        // Upsert Clerk user into our DB, then load their sites
+        const sitesRes = await fetch(`/api/sites?userId=${clerkUser!.id}`);
         if (sitesRes.ok) {
           const { sites } = await sitesRes.json();
           setSites(sites ?? []);
@@ -270,7 +254,7 @@ export default function DashboardPage() {
       }
     }
     init();
-  }, [router, loadDashboard]);
+  }, [isLoaded, clerkUser, router, loadDashboard]);
 
   async function runAgent(agentId: string) {
     if (!currentSite || agentRunning[agentId]) return;
@@ -299,9 +283,7 @@ export default function DashboardPage() {
   }
 
   async function handleLogout() {
-    await fetch("/api/auth/logout", { method: "POST" });
-    router.push("/");
-    router.refresh();
+    await signOut({ redirectUrl: "/" });
   }
 
   function handleSiteCreated(site: Site) {
@@ -322,6 +304,21 @@ export default function DashboardPage() {
     { label: "Monthly Leads",    value: m ? String(m.monthlyLeads)       : "—",     change: "+0%",   up: true,  sub: "from SEO channels" },
   ];
 
+  // ── Clerk not yet hydrated ──────────────────────────────────────────────────
+  if (!isLoaded || (isLoaded && !clerkUser)) {
+    return (
+      <div className="min-h-screen bg-[#050914] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-indigo-400 animate-spin" />
+      </div>
+    );
+  }
+
+  // Clerk user display helpers
+  const displayName = clerkUser.fullName ?? clerkUser.primaryEmailAddress?.emailAddress ?? "";
+  const displayInitials = displayName
+    ? displayName.trim().split(" ").map((p: string) => p[0]).join("").toUpperCase().slice(0, 2)
+    : "?";
+
   // ── Loading skeleton ────────────────────────────────────────────────────────
   if (loading) {
     return (
@@ -338,13 +335,13 @@ export default function DashboardPage() {
   if (!currentSite && !loading) {
     return (
       <div className="min-h-screen bg-[#050914] flex items-center justify-center p-4">
-        {showAddSite && <AddSiteModal onClose={() => setShowAddSite(false)} onCreated={handleSiteCreated} />}
+        {showAddSite && <AddSiteModal userId={clerkUser.id} onClose={() => setShowAddSite(false)} onCreated={handleSiteCreated} />}
         <div className="text-center max-w-md">
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center mx-auto mb-6 shadow-lg shadow-indigo-500/30">
             <Globe className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-2xl font-bold text-white mb-3">
-            Welcome{user?.name ? `, ${user.name.split(" ")[0]}` : ""}!
+            Welcome{clerkUser.firstName ? `, ${clerkUser.firstName}` : ""}!
           </h1>
           <p className="text-slate-400 text-sm mb-8 leading-relaxed">
             Add your website to start monitoring your AI citation share, run technical SEO audits, and generate optimized content — all automatically.
@@ -383,7 +380,7 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-[#050914] text-white flex">
       {/* Add site modal */}
-      {showAddSite && <AddSiteModal onClose={() => setShowAddSite(false)} onCreated={handleSiteCreated} />}
+      {showAddSite && <AddSiteModal userId={clerkUser.id} onClose={() => setShowAddSite(false)} onCreated={handleSiteCreated} />}
 
       {/* Toast notification */}
       {agentToast && (
@@ -507,7 +504,7 @@ export default function DashboardPage() {
               <Bell className="w-4 h-4" />
             </button>
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
-              {user ? initials(user.name, user.email) : "?"}
+              {displayInitials}
             </div>
           </div>
         </header>
