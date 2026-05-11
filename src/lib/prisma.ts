@@ -9,10 +9,13 @@ const BILLING_MIGRATIONS = [
   "ALTER TABLE User ADD COLUMN stripeSubscriptionId TEXT",
   "ALTER TABLE User ADD COLUMN stripeSubscriptionStatus TEXT",
   "ALTER TABLE User ADD COLUMN planCurrentPeriodEnd TEXT",
-  // Schedule columns on Site
+  // Schedule + integration columns on Site
+  "ALTER TABLE Site ADD COLUMN slackWebhookUrl TEXT",
   "ALTER TABLE Site ADD COLUMN scheduleEnabled INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE Site ADD COLUMN scheduleFrequency TEXT NOT NULL DEFAULT 'weekly'",
   "ALTER TABLE Site ADD COLUMN lastScheduledRunAt TEXT",
+  // Content unique slug per site
+  `CREATE UNIQUE INDEX IF NOT EXISTS "Content_siteId_slug_key" ON "Content"("siteId","slug")`,
   // Competitor tracking tables
   `CREATE TABLE IF NOT EXISTS "Competitor" ("id" TEXT NOT NULL PRIMARY KEY, "siteId" TEXT NOT NULL, "domain" TEXT NOT NULL, "name" TEXT NOT NULL, "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "Competitor_siteId_fkey" FOREIGN KEY ("siteId") REFERENCES "Site" ("id") ON DELETE CASCADE ON UPDATE CASCADE)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "Competitor_siteId_domain_key" ON "Competitor"("siteId","domain")`,

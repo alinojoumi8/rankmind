@@ -41,7 +41,7 @@ export const PLANS: Record<Plan, {
     price: 49,
     sites: 3,
     runsPerMonth: -1,
-    agents: ["geo-scout", "site-doctor", "content-architect"],
+    agents: ["geo-scout", "site-doctor", "content-architect", "keyword-intel"],
     features: [
       "3 websites",
       "Unlimited agent runs",
@@ -58,7 +58,7 @@ export const PLANS: Record<Plan, {
     runsPerMonth: -1,
     agents: [
       "geo-scout", "site-doctor", "content-architect",
-      "schema-architect", "authority-builder", "keyword-intel", "campaign-intel",
+      "schema-architect", "keyword-intel", "authority-builder", "campaign-intel",
     ],
     features: [
       "Unlimited websites",

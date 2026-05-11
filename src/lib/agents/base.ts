@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/prisma";
+import { notifySlack } from "@/lib/webhook";
+import { getUserPlan } from "@/lib/billing";
 
 export interface AgentContext {
   siteId: string;
@@ -49,8 +51,9 @@ export abstract class BaseAgent {
       keywords: JSON.parse(site.keywords) as string[],
     };
 
+    let result: AgentResult;
     try {
-      const result = await this.execute(ctx);
+      result = await this.execute(ctx);
 
       await prisma.agentRun.update({
         where: { id: agentRun.id },
@@ -61,8 +64,6 @@ export abstract class BaseAgent {
           error: result.error ?? null,
         },
       });
-
-      return result;
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
 
@@ -75,7 +76,24 @@ export abstract class BaseAgent {
         },
       });
 
-      return { success: false, summary: "Agent crashed", error: errorMsg };
+      result = { success: false, summary: "Agent crashed", error: errorMsg };
     }
+
+    // Fire Slack webhook if configured (non-blocking)
+    if (site.slackWebhookUrl) {
+      try {
+        const plan = await getUserPlan(site.userId);
+        notifySlack(site.slackWebhookUrl, {
+          agentName: this.agentName,
+          siteName: site.name,
+          siteDomain: site.domain,
+          success: result.success,
+          summary: result.summary,
+          plan,
+        }).catch(() => {});
+      } catch { /* ignore */ }
+    }
+
+    return result;
   }
 }
