@@ -2,6 +2,12 @@ import { BaseAgent, AgentContext, AgentResult } from "./base";
 import { queryCitation, PERPLEXITY_MODEL } from "@/lib/openrouter";
 import { prisma } from "@/lib/prisma";
 
+function checkMentioned(rawResponse: string, domain: string, name: string): boolean {
+  const lower = rawResponse.toLowerCase();
+  return lower.includes(domain.toLowerCase().replace(/^www\./, "")) ||
+         lower.includes(name.toLowerCase());
+}
+
 // Query templates — question-form queries LLMs answer with source citations
 function buildQueries(ctx: AgentContext): string[] {
   const { name, industry, keywords } = ctx;
@@ -30,6 +36,12 @@ export class GeoScoutAgent extends BaseAgent {
 
     let totalCited = 0;
 
+    // Load competitors for this site
+    const competitors = await prisma.competitor.findMany({
+      where: { siteId: ctx.siteId },
+      select: { id: true, domain: true, name: true },
+    });
+
     for (const query of queries) {
       try {
         const result = await queryCitation(
@@ -39,7 +51,7 @@ export class GeoScoutAgent extends BaseAgent {
           PERPLEXITY_MODEL
         );
 
-        // Store in DB
+        // Store own citation
         await prisma.citation.create({
           data: {
             siteId: ctx.siteId,
@@ -52,6 +64,22 @@ export class GeoScoutAgent extends BaseAgent {
           },
         });
 
+        // Track competitor mentions in the same response (no extra API calls)
+        if (competitors.length > 0) {
+          await Promise.all(
+            competitors.map((comp) =>
+              prisma.competitorMention.create({
+                data: {
+                  competitorId: comp.id,
+                  siteId: ctx.siteId,
+                  query,
+                  mentioned: checkMentioned(result.rawResponse, comp.domain, comp.name),
+                },
+              })
+            )
+          );
+        }
+
         if (result.cited) totalCited++;
 
         results.push({
@@ -61,7 +89,6 @@ export class GeoScoutAgent extends BaseAgent {
           excerpt: result.excerpt,
         });
       } catch (err) {
-        // Log but don't fail the whole run for a single query error
         console.error(`GeoScout query failed: ${query}`, err);
         results.push({ query, cited: false, sentiment: null, excerpt: null });
       }

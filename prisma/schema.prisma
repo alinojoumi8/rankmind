@@ -51,6 +51,8 @@ model Site {
   contents    Content[]
   siteIssues  SiteIssue[]
   metrics     SiteMetric[]
+  competitors Competitor[]
+  reports     Report[]
 
   @@unique([userId, domain])
 }
@@ -122,4 +124,38 @@ model SiteMetric {
   techScore       Int      @default(0)
   monthlyLeads    Int      @default(0)
   site            Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+}
+
+model Competitor {
+  id        String   @id @default(cuid())
+  siteId    String
+  domain    String
+  name      String
+  createdAt DateTime @default(now())
+  site      Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  mentions  CompetitorMention[]
+
+  @@unique([siteId, domain])
+}
+
+model CompetitorMention {
+  id           String   @id @default(cuid())
+  competitorId String
+  siteId       String
+  query        String
+  mentioned    Boolean  @default(false)
+  checkedAt    DateTime @default(now())
+  competitor   Competitor @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+}
+
+model Report {
+  id           String   @id @default(cuid())
+  siteId       String
+  token        String   @unique
+  title        String
+  snapshotData String   // JSON blob of dashboard snapshot
+  viewCount    Int      @default(0)
+  expiresAt    DateTime?
+  createdAt    DateTime @default(now())
+  site         Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
 }

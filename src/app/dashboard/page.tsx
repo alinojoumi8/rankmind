@@ -344,6 +344,17 @@ export default function DashboardPage() {
   const [agentToast, setAgentToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const [scheduleLoading, setScheduleLoading] = useState(false);
 
+  // Competitors
+  const [competitors, setCompetitors] = useState<{ id: string; domain: string; name: string; mentionRate: number; totalChecks: number }[]>([]);
+  const [newCompetitor, setNewCompetitor] = useState({ domain: "", name: "" });
+  const [competitorLoading, setCompetitorLoading] = useState(false);
+  const [showAddCompetitor, setShowAddCompetitor] = useState(false);
+
+  // Reports
+  const [reports, setReports] = useState<{ id: string; token: string; title: string; viewCount: number; expiresAt: string | null; createdAt: string }[]>([]);
+  const [reportGenerating, setReportGenerating] = useState(false);
+  const [copiedToken, setCopiedToken] = useState<string | null>(null);
+
   const loadDashboard = useCallback(async (siteId: string) => {
     const res = await fetch(`/api/dashboard?siteId=${siteId}`);
     if (res.ok) setDashData(await res.json());
@@ -363,6 +374,7 @@ export default function DashboardPage() {
           if (sites?.length > 0) {
             setCurrentSite(sites[0]);
             await loadDashboard(sites[0].id);
+            await Promise.all([loadCompetitors(sites[0].id), loadReports(sites[0].id)]);
           }
         }
       } finally {
@@ -396,6 +408,72 @@ export default function DashboardPage() {
       setAgentRunning((p) => ({ ...p, [agentId]: false }));
       setTimeout(() => setAgentToast(null), 5000);
     }
+  }
+
+  async function loadCompetitors(siteId: string) {
+    const res = await fetch(`/api/competitors?siteId=${siteId}`);
+    if (res.ok) { const d = await res.json(); setCompetitors(d.competitors ?? []); }
+  }
+
+  async function loadReports(siteId: string) {
+    const res = await fetch(`/api/reports?siteId=${siteId}`);
+    if (res.ok) { const d = await res.json(); setReports(d.reports ?? []); }
+  }
+
+  async function addCompetitor() {
+    if (!currentSite || !newCompetitor.domain) return;
+    setCompetitorLoading(true);
+    try {
+      const res = await fetch("/api/competitors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ siteId: currentSite.id, ...newCompetitor }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setNewCompetitor({ domain: "", name: "" });
+        setShowAddCompetitor(false);
+        await loadCompetitors(currentSite.id);
+        setAgentToast({ msg: "Competitor added — will be tracked on next GEO Scout run", ok: true });
+      } else {
+        setAgentToast({ msg: data.error ?? "Failed to add competitor", ok: false });
+      }
+    } catch { setAgentToast({ msg: "Network error", ok: false }); }
+    finally { setCompetitorLoading(false); setTimeout(() => setAgentToast(null), 5000); }
+  }
+
+  async function removeCompetitor(id: string) {
+    if (!currentSite) return;
+    await fetch(`/api/competitors?id=${id}`, { method: "DELETE" });
+    setCompetitors((p) => p.filter((c) => c.id !== id));
+  }
+
+  async function generateReport() {
+    if (!currentSite) return;
+    setReportGenerating(true);
+    try {
+      const res = await fetch("/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ siteId: currentSite.id }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        await navigator.clipboard.writeText(data.url).catch(() => {});
+        await loadReports(currentSite.id);
+        setAgentToast({ msg: "Report generated & link copied!", ok: true });
+      } else {
+        setAgentToast({ msg: data.error ?? "Failed to generate report", ok: false });
+      }
+    } catch { setAgentToast({ msg: "Network error", ok: false }); }
+    finally { setReportGenerating(false); setTimeout(() => setAgentToast(null), 5000); }
+  }
+
+  async function copyReportLink(token: string) {
+    const url = `${window.location.origin}/reports/${token}`;
+    await navigator.clipboard.writeText(url).catch(() => {});
+    setCopiedToken(token);
+    setTimeout(() => setCopiedToken(null), 2000);
   }
 
   async function toggleSchedule() {
@@ -570,7 +648,7 @@ export default function DashboardPage() {
               {sites.filter(s => s.id !== currentSite?.id).map(s => (
                 <button
                   key={s.id}
-                  onClick={() => { setCurrentSite(s); loadDashboard(s.id); }}
+                  onClick={() => { setCurrentSite(s); loadDashboard(s.id); loadCompetitors(s.id); loadReports(s.id); }}
                   className="w-full text-left px-3 py-1.5 rounded-lg text-[11px] text-slate-500 hover:text-white hover:bg-white/5 transition-all truncate"
                 >
                   {s.domain}
@@ -1035,6 +1113,136 @@ export default function DashboardPage() {
               </div>
             </div>
           )}
+
+          {/* Competitor tracking + Shareable reports row */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+            {/* Competitor Citation Comparison */}
+            <div className="bg-[#080d1a] border border-white/5 rounded-xl p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-semibold text-white">Competitor Citations</h2>
+                <button
+                  onClick={() => setShowAddCompetitor((p) => !p)}
+                  className="flex items-center gap-1 text-[10px] text-indigo-400 hover:text-indigo-300 transition-colors"
+                >
+                  <Plus className="w-3 h-3" /> Add
+                </button>
+              </div>
+
+              {showAddCompetitor && (
+                <div className="mb-4 p-3 bg-white/3 border border-white/8 rounded-lg space-y-2">
+                  <input
+                    placeholder="competitor.com"
+                    value={newCompetitor.domain}
+                    onChange={(e) => setNewCompetitor((p) => ({ ...p, domain: e.target.value }))}
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
+                  />
+                  <input
+                    placeholder="Competitor Name"
+                    value={newCompetitor.name}
+                    onChange={(e) => setNewCompetitor((p) => ({ ...p, name: e.target.value }))}
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
+                  />
+                  <button
+                    onClick={addCompetitor}
+                    disabled={competitorLoading || !newCompetitor.domain || !newCompetitor.name}
+                    className="w-full flex items-center justify-center gap-1.5 bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-400 text-xs rounded-lg py-1.5 transition-all disabled:opacity-50"
+                  >
+                    {competitorLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                    Track Competitor
+                  </button>
+                </div>
+              )}
+
+              {competitors.length > 0 ? (
+                <div className="space-y-3">
+                  {/* Own site */}
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-xs font-medium text-white">
+                        {currentSite?.name} <span className="text-[10px] text-indigo-400">You</span>
+                      </span>
+                      <span className="text-xs text-indigo-400 font-semibold">{dashData?.metrics.citationShare ?? 0}%</span>
+                    </div>
+                    <div className="h-2 bg-white/5 rounded-full overflow-hidden">
+                      <div className="h-full bg-indigo-400 rounded-full" style={{ width: `${dashData?.metrics.citationShare ?? 0}%` }} />
+                    </div>
+                  </div>
+                  {competitors.map((comp) => (
+                    <div key={comp.id}>
+                      <div className="flex justify-between items-center mb-1">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-xs text-slate-400 truncate">{comp.name || comp.domain}</span>
+                          {comp.totalChecks === 0 && <span className="text-[10px] text-slate-600">(pending)</span>}
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <span className="text-xs text-slate-400 font-semibold">{comp.mentionRate}%</span>
+                          <button onClick={() => removeCompetitor(comp.id)} className="text-slate-700 hover:text-rose-400 transition-colors">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="h-2 bg-white/5 rounded-full overflow-hidden">
+                        <div className="h-full bg-slate-600 rounded-full" style={{ width: `${comp.mentionRate}%` }} />
+                      </div>
+                    </div>
+                  ))}
+                  <p className="text-[10px] text-slate-600 pt-1">Data updates each time GEO Scout runs.</p>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-24 text-center">
+                  <BarChart3 className="w-8 h-8 text-slate-700 mb-2" />
+                  <p className="text-xs text-slate-600">Add competitors to compare AI citation rates.</p>
+                  <p className="text-[10px] text-slate-700 mt-1">Requires Growth plan</p>
+                </div>
+              )}
+            </div>
+
+            {/* Shareable Reports */}
+            <div className="bg-[#080d1a] border border-white/5 rounded-xl p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-semibold text-white">Shareable Reports</h2>
+                <button
+                  onClick={generateReport}
+                  disabled={reportGenerating}
+                  className="flex items-center gap-1.5 text-[10px] font-medium bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-400 border border-indigo-500/20 rounded-lg px-2.5 py-1 transition-all disabled:opacity-50"
+                >
+                  {reportGenerating ? <Loader2 className="w-3 h-3 animate-spin" /> : <ExternalLink className="w-3 h-3" />}
+                  {reportGenerating ? "Generating…" : "Generate Report"}
+                </button>
+              </div>
+
+              {reports.length > 0 ? (
+                <div className="space-y-2.5">
+                  {reports.slice(0, 5).map((r) => (
+                    <div key={r.id} className="flex items-center gap-3 p-2.5 bg-white/3 rounded-lg">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-slate-300 truncate">{r.title}</p>
+                        <p className="text-[10px] text-slate-600 mt-0.5">
+                          {new Date(r.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                          {" · "}{r.viewCount} views
+                          {r.expiresAt && ` · Expires ${new Date(r.expiresAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => copyReportLink(r.token)}
+                        className="text-[10px] text-indigo-400 hover:text-indigo-300 flex items-center gap-1 flex-shrink-0 transition-colors"
+                      >
+                        {copiedToken === r.token ? "Copied!" : <><ExternalLink className="w-3 h-3" /> Copy</>}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-24 text-center">
+                  <ExternalLink className="w-8 h-8 text-slate-700 mb-2" />
+                  <p className="text-xs text-slate-600">Generate a shareable link to send to clients.</p>
+                  <p className="text-[10px] text-slate-700 mt-1">Requires Growth plan</p>
+                </div>
+              )}
+            </div>
+          </div>
+
         </main>
       </div>
     </div>

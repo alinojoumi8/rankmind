@@ -13,6 +13,13 @@ const BILLING_MIGRATIONS = [
   "ALTER TABLE Site ADD COLUMN scheduleEnabled INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE Site ADD COLUMN scheduleFrequency TEXT NOT NULL DEFAULT 'weekly'",
   "ALTER TABLE Site ADD COLUMN lastScheduledRunAt TEXT",
+  // Competitor tracking tables
+  `CREATE TABLE IF NOT EXISTS "Competitor" ("id" TEXT NOT NULL PRIMARY KEY, "siteId" TEXT NOT NULL, "domain" TEXT NOT NULL, "name" TEXT NOT NULL, "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "Competitor_siteId_fkey" FOREIGN KEY ("siteId") REFERENCES "Site" ("id") ON DELETE CASCADE ON UPDATE CASCADE)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "Competitor_siteId_domain_key" ON "Competitor"("siteId","domain")`,
+  `CREATE TABLE IF NOT EXISTS "CompetitorMention" ("id" TEXT NOT NULL PRIMARY KEY, "competitorId" TEXT NOT NULL, "siteId" TEXT NOT NULL, "query" TEXT NOT NULL, "mentioned" INTEGER NOT NULL DEFAULT 0, "checkedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "CompetitorMention_competitorId_fkey" FOREIGN KEY ("competitorId") REFERENCES "Competitor" ("id") ON DELETE CASCADE ON UPDATE CASCADE)`,
+  // Shareable reports table
+  `CREATE TABLE IF NOT EXISTS "Report" ("id" TEXT NOT NULL PRIMARY KEY, "siteId" TEXT NOT NULL, "token" TEXT NOT NULL, "title" TEXT NOT NULL, "snapshotData" TEXT NOT NULL, "viewCount" INTEGER NOT NULL DEFAULT 0, "expiresAt" DATETIME, "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "Report_siteId_fkey" FOREIGN KEY ("siteId") REFERENCES "Site" ("id") ON DELETE CASCADE ON UPDATE CASCADE)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "Report_token_key" ON "Report"("token")`,
 ];
 
 async function applyMigrations(client: PrismaClient) {
