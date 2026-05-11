@@ -16,10 +16,16 @@ export async function GET(req: NextRequest) {
   }
 
   // Run all DB queries in parallel
-  const [latestMetric, citations, contents, issues, recentRuns] = await Promise.all([
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const [latestMetric, metricHistory, citations, contents, issues, recentRuns] = await Promise.all([
     prisma.siteMetric.findFirst({
       where: { siteId },
       orderBy: { date: "desc" },
+    }),
+    prisma.siteMetric.findMany({
+      where: { siteId, date: { gte: thirtyDaysAgo } },
+      orderBy: { date: "asc" },
+      select: { date: true, geoScore: true, citationShare: true, techScore: true, organicTraffic: true },
     }),
     prisma.citation.findMany({
       where: { siteId },
@@ -87,6 +93,13 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     site: { id: site.id, domain: site.domain, name: site.name },
+    metricHistory: metricHistory.map((m) => ({
+      date: m.date,
+      geoScore: m.geoScore,
+      citationShare: m.citationShare,
+      techScore: m.techScore,
+      organicTraffic: m.organicTraffic,
+    })),
     metrics: {
       citationShare: overallCitationShare,
       organicTraffic: latestMetric?.organicTraffic ?? 0,

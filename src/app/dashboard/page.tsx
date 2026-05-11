@@ -29,9 +29,20 @@ import {
   Loader2,
   RefreshCw,
   X,
+  CheckCircle2,
+  Circle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+} from "recharts";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -47,6 +58,7 @@ interface Site {
 
 interface DashData {
   site: { id: string; domain: string; name: string };
+  metricHistory: { date: string; geoScore: number; citationShare: number; techScore: number; organicTraffic: number }[];
   metrics: {
     citationShare: number;
     organicTraffic: number;
@@ -99,6 +111,106 @@ function timeAgo(dateStr: string | null): string {
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${hrs}h ago`;
   return `${Math.floor(hrs / 24)}d ago`;
+}
+
+// ── Onboarding Checklist ──────────────────────────────────────────────────────
+
+interface OnboardingChecklistProps {
+  hasSite: boolean;
+  geoScoutRan: boolean;
+  siteDoctorRan: boolean;
+  autoRunEnabled: boolean;
+  onRunGeoScout: () => void;
+  onRunSiteDoctor: () => void;
+  agentRunning: Record<string, boolean>;
+}
+
+function OnboardingChecklist({
+  hasSite, geoScoutRan, siteDoctorRan, autoRunEnabled,
+  onRunGeoScout, onRunSiteDoctor, agentRunning,
+}: OnboardingChecklistProps) {
+  const [dismissed, setDismissed] = useState(false);
+
+  useEffect(() => {
+    setDismissed(localStorage.getItem("onboarding_dismissed") === "1");
+  }, []);
+
+  const steps = [
+    { label: "Create your account", done: true },
+    { label: "Add your website", done: hasSite },
+    { label: "Run GEO Scout — scan AI citations", done: geoScoutRan,
+      action: !geoScoutRan ? onRunGeoScout : undefined,
+      actionLabel: agentRunning["geo-scout"] ? "Running…" : "Run now",
+      loading: agentRunning["geo-scout"] },
+    { label: "Run Site Doctor — audit tech health", done: siteDoctorRan,
+      action: !siteDoctorRan ? onRunSiteDoctor : undefined,
+      actionLabel: agentRunning["site-doctor"] ? "Running…" : "Run now",
+      loading: agentRunning["site-doctor"] },
+    { label: "Enable Auto-Run (weekly scans)", done: autoRunEnabled,
+      hint: "Toggle the switch in the AI Agents card" },
+  ];
+
+  const completedCount = steps.filter((s) => s.done).length;
+  const allDone = completedCount === steps.length;
+
+  if (dismissed || allDone) return null;
+
+  return (
+    <div className="bg-[#080d1a] border border-indigo-500/15 rounded-xl p-5">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-indigo-500/15 flex items-center justify-center">
+            <CheckCircle2 className="w-4 h-4 text-indigo-400" />
+          </div>
+          <div>
+            <h2 className="text-sm font-semibold text-white">Getting started</h2>
+            <p className="text-[10px] text-slate-500">{completedCount}/{steps.length} steps complete</p>
+          </div>
+        </div>
+        <button
+          onClick={() => { setDismissed(true); localStorage.setItem("onboarding_dismissed", "1"); }}
+          className="text-slate-600 hover:text-slate-400 transition-colors"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Progress bar */}
+      <div className="w-full h-1 bg-white/5 rounded-full mb-4 overflow-hidden">
+        <div
+          className="h-full bg-gradient-to-r from-indigo-500 to-violet-500 rounded-full transition-all duration-500"
+          style={{ width: `${(completedCount / steps.length) * 100}%` }}
+        />
+      </div>
+
+      <div className="space-y-2">
+        {steps.map((step, i) => (
+          <div key={i} className="flex items-center gap-3">
+            {step.done
+              ? <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+              : <Circle className="w-4 h-4 text-slate-600 flex-shrink-0" />
+            }
+            <span className={cn("text-xs flex-1", step.done ? "text-slate-500 line-through" : "text-slate-300")}>
+              {step.label}
+            </span>
+            {!step.done && step.action && (
+              <button
+                onClick={step.action}
+                disabled={step.loading}
+                className="flex items-center gap-1 text-[10px] font-medium text-indigo-400 hover:text-indigo-300 transition-colors disabled:opacity-50"
+              >
+                {step.loading && <Loader2 className="w-3 h-3 animate-spin" />}
+                {step.actionLabel}
+              </button>
+            )}
+            {!step.done && step.hint && (
+              <span className="text-[10px] text-slate-600">{step.hint}</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 // ── Add-Site Modal ────────────────────────────────────────────────────────────
@@ -573,6 +685,69 @@ export default function DashboardPage() {
                     {id === "geo-scout" ? "GEO Scout" : "Site Doctor"}
                   </button>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* Onboarding Checklist — shown until all steps complete */}
+          <OnboardingChecklist
+            hasSite={!!currentSite}
+            geoScoutRan={!!dashData?.agentStatuses.find(a => a.name === "geo-scout" && a.status === "completed")}
+            siteDoctorRan={!!dashData?.agentStatuses.find(a => a.name === "site-doctor" && a.status === "completed")}
+            autoRunEnabled={!!currentSite?.scheduleEnabled}
+            onRunGeoScout={() => runAgent("geo-scout")}
+            onRunSiteDoctor={() => runAgent("site-doctor")}
+            agentRunning={agentRunning}
+          />
+
+          {/* Historical Charts — shown when there's metric history */}
+          {dashData?.metricHistory && dashData.metricHistory.length >= 2 && (
+            <div className="bg-[#080d1a] border border-white/5 rounded-xl p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-semibold text-white">Performance Trends</h2>
+                <span className="text-[10px] text-slate-500">Last 30 days</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* GEO Score trend */}
+                <div>
+                  <div className="text-[11px] text-slate-500 mb-2">GEO Score</div>
+                  <ResponsiveContainer width="100%" height={120}>
+                    <LineChart data={dashData.metricHistory.map(m => ({
+                      date: new Date(m.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+                      value: m.geoScore,
+                    }))}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                      <XAxis dataKey="date" tick={{ fontSize: 9, fill: "#475569" }} tickLine={false} axisLine={false} />
+                      <YAxis domain={[0, 100]} tick={{ fontSize: 9, fill: "#475569" }} tickLine={false} axisLine={false} width={24} />
+                      <Tooltip
+                        contentStyle={{ background: "#0d1629", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, fontSize: 11 }}
+                        labelStyle={{ color: "#94a3b8" }}
+                        itemStyle={{ color: "#818cf8" }}
+                      />
+                      <Line type="monotone" dataKey="value" stroke="#6366f1" strokeWidth={2} dot={false} name="GEO Score" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+                {/* Citation Share trend */}
+                <div>
+                  <div className="text-[11px] text-slate-500 mb-2">Citation Rate (%)</div>
+                  <ResponsiveContainer width="100%" height={120}>
+                    <LineChart data={dashData.metricHistory.map(m => ({
+                      date: new Date(m.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+                      value: Math.round(m.citationShare),
+                    }))}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                      <XAxis dataKey="date" tick={{ fontSize: 9, fill: "#475569" }} tickLine={false} axisLine={false} />
+                      <YAxis domain={[0, 100]} tick={{ fontSize: 9, fill: "#475569" }} tickLine={false} axisLine={false} width={24} />
+                      <Tooltip
+                        contentStyle={{ background: "#0d1629", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, fontSize: 11 }}
+                        labelStyle={{ color: "#94a3b8" }}
+                        itemStyle={{ color: "#34d399" }}
+                      />
+                      <Line type="monotone" dataKey="value" stroke="#34d399" strokeWidth={2} dot={false} name="Citation Rate" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
             </div>
           )}
