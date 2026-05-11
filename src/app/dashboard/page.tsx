@@ -82,8 +82,8 @@ const agentMeta = [
   { id: "schema-architect", name: "Schema Architect",   icon: Code2,     color: "cyan",    runnable: true },
   { id: "keyword-intel",    name: "Keyword Intelligence",icon: BarChart3, color: "blue",    runnable: true },
   { id: "site-doctor",      name: "Site Doctor",        icon: Wrench,    color: "orange",  runnable: true },
-  { id: "authority-builder",name: "Authority Builder",  icon: Link2,     color: "emerald", runnable: false },
-  { id: "campaign-intel",   name: "Campaign Intel",     icon: Megaphone, color: "pink",    runnable: false },
+  { id: "authority-builder",name: "Authority Builder",  icon: Link2,     color: "emerald", runnable: true },
+  { id: "campaign-intel",   name: "Campaign Intel",     icon: Megaphone, color: "pink",    runnable: true },
 ];
 
 const colorMap: Record<string, { bg: string; text: string; border: string }> = {
@@ -102,6 +102,8 @@ const agentEndpoint: Record<string, string> = {
   "site-doctor":       "/api/agents/site-doctor",
   "schema-architect":  "/api/agents/schema-architect",
   "keyword-intel":     "/api/agents/keyword-intel",
+  "authority-builder": "/api/agents/authority-builder",
+  "campaign-intel":    "/api/agents/campaign-intel",
 };
 
 function timeAgo(dateStr: string | null): string {
@@ -335,7 +337,7 @@ export default function DashboardPage() {
   const { signOut } = useClerk();
 
   const [activeTab, setActiveTab] = useState("overview");
-  const tabs = ["overview", "agents", "content", "citations", "reports"];
+  const tabs = ["overview", "agents", "content", "citations", "keywords", "reports"];
 
   const [sites, setSites] = useState<Site[]>([]);
   const [currentSite, setCurrentSite] = useState<Site | null>(null);
@@ -358,6 +360,34 @@ export default function DashboardPage() {
     contentGaps: string[];
     summary: string;
   } | null>(null);
+
+  // Authority Builder results
+  const [authorityData, setAuthorityData] = useState<Record<string, unknown> | null>(null);
+
+  // Campaign Intel results
+  const [campaignData, setCampaignData] = useState<Record<string, unknown> | null>(null);
+
+  // Team members
+  const [teamMembers, setTeamMembers] = useState<Array<{
+    id: string; inviteEmail: string; role: string; invitedAt: string;
+    acceptedAt: string | null; userId: string | null;
+    user: { name: string | null; email: string } | null;
+  }>>([]);
+  const [newInviteEmail, setNewInviteEmail] = useState("");
+  const [newInviteRole, setNewInviteRole] = useState<"editor" | "viewer">("editor");
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [showInviteForm, setShowInviteForm] = useState(false);
+
+  // Google Search Console
+  const [gscConnected, setGscConnected] = useState<boolean | null>(null); // null = loading
+  const [gscData, setGscData] = useState<{
+    siteUrl: string | null;
+    siteList: string[];
+    queries: Array<{ query: string; clicks: number; impressions: number; ctr: number; position: number }>;
+    pages: Array<{ page: string; clicks: number; impressions: number; ctr: number; position: number }>;
+  } | null>(null);
+  const [gscLoading, setGscLoading] = useState(false);
+  const [gscSiteList, setGscSiteList] = useState<string[]>([]);
 
   // Content approval
   const [contentStatusLoading, setContentStatusLoading] = useState<Record<string, boolean>>({});
@@ -392,8 +422,22 @@ export default function DashboardPage() {
           if (sites?.length > 0) {
             setCurrentSite(sites[0]);
             await loadDashboard(sites[0].id);
-            await Promise.all([loadCompetitors(sites[0].id), loadReports(sites[0].id)]);
+            await Promise.all([
+              loadCompetitors(sites[0].id),
+              loadReports(sites[0].id),
+              loadGSC(sites[0].id),
+              loadTeam(sites[0].id),
+            ]);
           }
+        }
+        // Handle Google OAuth return params
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("gsc_connected") === "1") {
+          setAgentToast({ msg: "Google Search Console connected!", ok: true });
+          window.history.replaceState({}, "", window.location.pathname);
+        } else if (params.get("gsc_error")) {
+          setAgentToast({ msg: `GSC error: ${params.get("gsc_error")}`, ok: false });
+          window.history.replaceState({}, "", window.location.pathname);
         }
       } finally {
         setLoading(false);
@@ -417,9 +461,15 @@ export default function DashboardPage() {
       if (res.ok && data.success) {
         setAgentToast({ msg: data.summary ?? "Agent completed", ok: true });
         await loadDashboard(currentSite.id);
-        // Capture keyword intel data on the fly
+        // Capture agent result data for in-dashboard display
         if (agentId === "keyword-intel" && data.data?.clusters) {
           setKeywordData(data.data);
+        }
+        if (agentId === "authority-builder" && data.data?.linkOpportunities) {
+          setAuthorityData(data.data);
+        }
+        if (agentId === "campaign-intel" && data.data?.campaignIdeas) {
+          setCampaignData(data.data);
         }
       } else {
         setAgentToast({ msg: data.error ?? "Agent failed", ok: false });
@@ -440,6 +490,74 @@ export default function DashboardPage() {
   async function loadReports(siteId: string) {
     const res = await fetch(`/api/reports?siteId=${siteId}`);
     if (res.ok) { const d = await res.json(); setReports(d.reports ?? []); }
+  }
+
+  async function loadTeam(siteId: string) {
+    const res = await fetch(`/api/teams?siteId=${siteId}`);
+    if (res.ok) { const d = await res.json(); setTeamMembers(d.members ?? []); }
+  }
+
+  async function inviteTeamMember() {
+    if (!currentSite || !newInviteEmail) return;
+    setInviteLoading(true);
+    try {
+      const res = await fetch("/api/teams", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ siteId: currentSite.id, email: newInviteEmail, role: newInviteRole }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setNewInviteEmail("");
+        setShowInviteForm(false);
+        await loadTeam(currentSite.id);
+        setAgentToast({ msg: data.message ?? "Invite sent!", ok: true });
+      } else {
+        setAgentToast({ msg: data.error ?? "Failed to send invite", ok: false });
+      }
+    } catch { setAgentToast({ msg: "Network error", ok: false }); }
+    finally { setInviteLoading(false); setTimeout(() => setAgentToast(null), 4000); }
+  }
+
+  async function removeTeamMember(id: string) {
+    await fetch(`/api/teams?id=${id}`, { method: "DELETE" });
+    setTeamMembers((p) => p.filter((m) => m.id !== id));
+  }
+
+  async function loadGSC(siteId: string) {
+    const res = await fetch(`/api/search-console?siteId=${siteId}`);
+    if (!res.ok) return;
+    const d = await res.json();
+    setGscConnected(d.connected === true);
+    if (d.connected) {
+      setGscSiteList(d.siteList ?? []);
+      if (d.queries) setGscData(d);
+    }
+  }
+
+  async function refreshGSC() {
+    if (!currentSite) return;
+    setGscLoading(true);
+    try { await loadGSC(currentSite.id); } finally { setGscLoading(false); }
+  }
+
+  async function disconnectGSC() {
+    await fetch("/api/search-console", { method: "DELETE" });
+    setGscConnected(false);
+    setGscData(null);
+    setGscSiteList([]);
+    setAgentToast({ msg: "Google Search Console disconnected", ok: true });
+    setTimeout(() => setAgentToast(null), 3000);
+  }
+
+  async function linkGSCSite(gscSiteUrl: string) {
+    if (!currentSite) return;
+    await fetch("/api/search-console", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ siteId: currentSite.id, gscSiteUrl }),
+    });
+    await refreshGSC();
   }
 
   async function addCompetitor() {
@@ -707,7 +825,7 @@ export default function DashboardPage() {
               {sites.filter(s => s.id !== currentSite?.id).map(s => (
                 <button
                   key={s.id}
-                  onClick={() => { setCurrentSite(s); loadDashboard(s.id); loadCompetitors(s.id); loadReports(s.id); }}
+                  onClick={() => { setCurrentSite(s); loadDashboard(s.id); loadCompetitors(s.id); loadReports(s.id); loadTeam(s.id); }}
                   className="w-full text-left px-3 py-1.5 rounded-lg text-[11px] text-slate-500 hover:text-white hover:bg-white/5 transition-all truncate"
                 >
                   {s.domain}
@@ -758,10 +876,13 @@ export default function DashboardPage() {
             <Zap className="w-4 h-4" />
             Plans & Billing
           </Link>
-          <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-400 hover:text-white hover:bg-white/5 transition-all">
+          <Link
+            href="/settings"
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-400 hover:text-white hover:bg-white/5 transition-all"
+          >
             <Settings className="w-4 h-4" />
             Settings
-          </button>
+          </Link>
           <button
             onClick={handleLogout}
             className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-400 hover:text-rose-400 hover:bg-rose-500/5 transition-all"
@@ -1412,6 +1533,359 @@ export default function DashboardPage() {
               <p className="text-[10px] text-slate-600 mt-3">✦ GEO-optimized keywords (high AI citation potential). Hover for title suggestion.</p>
             </div>
           )}
+
+          {/* Authority Builder Results */}
+          {authorityData && (
+            <div className="bg-[#080d1a] border border-white/5 rounded-xl p-5">
+              <div className="flex items-center justify-between mb-1">
+                <h2 className="text-sm font-semibold text-white">Authority Builder Strategy</h2>
+                <button onClick={() => setAuthorityData(null)} className="text-slate-600 hover:text-slate-400 transition-colors">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              {(() => {
+                const d = authorityData as {
+                  domainAuthorityInsights: { estimatedDR: number; linkGap: string; quickWins: string[] };
+                  linkOpportunities: Array<{ type: string; target: string; angle: string; estimatedDR: string; effort: string; priority: string; aiAuthorityBoost: boolean }>;
+                  contentAssets: Array<{ title: string; format: string; estimatedLinks: number; geoValue: string }>;
+                  digitalPrAngles: Array<{ angle: string; targetPublications: string[]; hook: string }>;
+                  monthlyPlan: Array<{ month: number; focus: string; actions: string[]; expectedLinks: number }>;
+                  summary: string;
+                };
+                return (
+                  <>
+                    <p className="text-[10px] text-slate-500 mb-4">{d.summary}</p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                      <div className="p-3 bg-emerald-500/5 border border-emerald-500/10 rounded-lg">
+                        <p className="text-[10px] text-emerald-400 font-medium mb-1">Estimated DR</p>
+                        <p className="text-2xl font-bold text-white">{d.domainAuthorityInsights.estimatedDR}</p>
+                        <p className="text-[10px] text-slate-600 mt-1">{d.domainAuthorityInsights.linkGap}</p>
+                      </div>
+                      <div className="md:col-span-2 p-3 bg-white/3 border border-white/5 rounded-lg">
+                        <p className="text-[10px] text-emerald-400 font-medium mb-2">⚡ Quick Wins</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {d.domainAuthorityInsights.quickWins.map((w, i) => (
+                            <span key={i} className="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full px-2 py-0.5">{w}</span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <p className="text-[11px] font-medium text-slate-300 mb-2">Link Opportunities</p>
+                    <div className="space-y-2 mb-4">
+                      {d.linkOpportunities.slice(0, 5).map((op, i) => (
+                        <div key={i} className="flex items-start gap-3 p-2.5 bg-white/3 rounded-lg">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                              <span className="text-xs text-white font-medium capitalize">{op.type.replace(/-/g, " ")}</span>
+                              <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full",
+                                op.priority === "high" ? "bg-rose-500/10 text-rose-400" :
+                                op.priority === "medium" ? "bg-amber-500/10 text-amber-400" :
+                                "bg-slate-500/10 text-slate-500"
+                              )}>{op.priority}</span>
+                              {op.aiAuthorityBoost && <span className="text-[10px] bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-full px-1.5 py-0.5">AI boost</span>}
+                            </div>
+                            <p className="text-[10px] text-slate-500">{op.angle}</p>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <div className="text-[10px] text-slate-500">DR {op.estimatedDR}</div>
+                            <div className="text-[10px] text-slate-600 capitalize">{op.effort} effort</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <p className="text-[11px] font-medium text-slate-300 mb-2">3-Month Plan</p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {d.monthlyPlan.map((m, i) => (
+                        <div key={i} className="p-3 bg-white/3 border border-white/5 rounded-lg">
+                          <p className="text-[10px] font-medium text-emerald-400 mb-1">Month {m.month} · ~{m.expectedLinks} links</p>
+                          <p className="text-xs text-slate-300 mb-2">{m.focus}</p>
+                          <ul className="space-y-0.5">
+                            {m.actions.slice(0, 3).map((a, j) => (
+                              <li key={j} className="text-[10px] text-slate-500 flex gap-1"><span className="text-emerald-600">›</span>{a}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* Campaign Intel Results */}
+          {campaignData && (
+            <div className="bg-[#080d1a] border border-white/5 rounded-xl p-5">
+              <div className="flex items-center justify-between mb-1">
+                <h2 className="text-sm font-semibold text-white">Campaign Intelligence</h2>
+                <button onClick={() => setCampaignData(null)} className="text-slate-600 hover:text-slate-400 transition-colors">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              {(() => {
+                const d = campaignData as {
+                  competitiveLandscape: { marketPosition: string; shareOfVoice: number; keyThreats: string[]; opportunities: string[] };
+                  campaignIdeas: Array<{ name: string; type: string; objective: string; description: string; aiVisibilityImpact: string; estimatedReach: string; timeframe: string; budget: string }>;
+                  contentCalendar: Array<{ week: number; theme: string; posts: Array<{ channel: string; title: string; format: string }> }>;
+                  aiSearchStrategy: { topicClusters: string[]; citationTriggers: string[] };
+                  kpis: Array<{ metric: string; target: string; timeframe: string }>;
+                  summary: string;
+                };
+                return (
+                  <>
+                    <p className="text-[10px] text-slate-500 mb-4">{d.summary}</p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                      <div className="p-3 bg-pink-500/5 border border-pink-500/10 rounded-lg">
+                        <p className="text-[10px] text-pink-400 font-medium mb-1">Market Position</p>
+                        <p className="text-lg font-bold text-white capitalize">{d.competitiveLandscape.marketPosition}</p>
+                        <p className="text-[10px] text-slate-600 mt-1">Est. {d.competitiveLandscape.shareOfVoice}% AI share of voice</p>
+                      </div>
+                      <div className="p-3 bg-white/3 border border-white/5 rounded-lg">
+                        <p className="text-[10px] text-rose-400 font-medium mb-2">Key Threats</p>
+                        {d.competitiveLandscape.keyThreats.slice(0, 3).map((t, i) => (
+                          <p key={i} className="text-[10px] text-slate-500 flex gap-1 mb-0.5"><span className="text-rose-600">›</span>{t}</p>
+                        ))}
+                      </div>
+                      <div className="p-3 bg-white/3 border border-white/5 rounded-lg">
+                        <p className="text-[10px] text-emerald-400 font-medium mb-2">Opportunities</p>
+                        {d.competitiveLandscape.opportunities.slice(0, 3).map((o, i) => (
+                          <p key={i} className="text-[10px] text-slate-500 flex gap-1 mb-0.5"><span className="text-emerald-600">›</span>{o}</p>
+                        ))}
+                      </div>
+                    </div>
+
+                    <p className="text-[11px] font-medium text-slate-300 mb-2">Campaign Ideas</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-4">
+                      {d.campaignIdeas.slice(0, 4).map((c, i) => (
+                        <div key={i} className="p-3 bg-white/3 border border-white/5 rounded-lg">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            <span className="text-xs font-medium text-white">{c.name}</span>
+                            <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full",
+                              c.aiVisibilityImpact === "high" ? "bg-pink-500/10 text-pink-400" :
+                              c.aiVisibilityImpact === "medium" ? "bg-amber-500/10 text-amber-400" :
+                              "bg-slate-500/10 text-slate-500"
+                            )}>{c.aiVisibilityImpact} AI impact</span>
+                          </div>
+                          <p className="text-[10px] text-slate-500 line-clamp-2">{c.description}</p>
+                          <div className="flex gap-3 mt-1.5">
+                            <span className="text-[10px] text-slate-600 capitalize">{c.timeframe}</span>
+                            <span className="text-[10px] text-slate-600">{c.estimatedReach} reach</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-[11px] font-medium text-slate-300 mb-2">AI Citation Triggers</p>
+                        <div className="space-y-1">
+                          {d.aiSearchStrategy.citationTriggers.map((t, i) => (
+                            <div key={i} className="flex items-center gap-2">
+                              <span className="w-1 h-1 rounded-full bg-pink-400 flex-shrink-0" />
+                              <span className="text-[10px] text-slate-400">{t}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-medium text-slate-300 mb-2">KPIs</p>
+                        <div className="space-y-1.5">
+                          {d.kpis.slice(0, 4).map((k, i) => (
+                            <div key={i} className="flex items-center justify-between">
+                              <span className="text-[10px] text-slate-400">{k.metric}</span>
+                              <div className="text-right">
+                                <span className="text-[10px] text-pink-400 font-medium">{k.target}</span>
+                                <span className="text-[10px] text-slate-600 ml-1">({k.timeframe})</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* Team Management */}
+          <div className="bg-[#080d1a] border border-white/5 rounded-xl p-5">
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-semibold text-white">Team Members</h2>
+                <span className="text-[10px] text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 rounded-full px-2 py-0.5">Growth+</span>
+              </div>
+              <button
+                onClick={() => setShowInviteForm((p) => !p)}
+                className="flex items-center gap-1 text-[10px] text-indigo-400 hover:text-indigo-300 transition-colors"
+              >
+                <Plus className="w-3 h-3" /> Invite
+              </button>
+            </div>
+            <p className="text-[10px] text-slate-500 mb-3">Invite teammates to collaborate on this site.</p>
+
+            {showInviteForm && (
+              <div className="mb-4 p-3 bg-white/3 border border-white/8 rounded-lg space-y-2">
+                <input
+                  type="email"
+                  placeholder="colleague@company.com"
+                  value={newInviteEmail}
+                  onChange={(e) => setNewInviteEmail(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
+                />
+                <div className="flex gap-2">
+                  <select
+                    value={newInviteRole}
+                    onChange={(e) => setNewInviteRole(e.target.value as "editor" | "viewer")}
+                    className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none"
+                  >
+                    <option value="editor">Editor</option>
+                    <option value="viewer">Viewer</option>
+                  </select>
+                  <button
+                    onClick={inviteTeamMember}
+                    disabled={inviteLoading || !newInviteEmail}
+                    className="flex-1 flex items-center justify-center gap-1.5 bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-400 text-xs rounded-lg py-1.5 transition-all disabled:opacity-50"
+                  >
+                    {inviteLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                    Send Invite
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {teamMembers.length > 0 ? (
+              <div className="space-y-2">
+                {/* Owner row */}
+                <div className="flex items-center gap-3 p-2 bg-white/2 rounded-lg">
+                  <div className="w-6 h-6 rounded-full bg-indigo-500/20 flex items-center justify-center text-[10px] font-bold text-indigo-400 flex-shrink-0">
+                    {(clerkUser?.fullName ?? clerkUser?.primaryEmailAddress?.emailAddress ?? "?")[0].toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-white truncate">{clerkUser?.fullName ?? clerkUser?.primaryEmailAddress?.emailAddress}</p>
+                    <p className="text-[10px] text-slate-600">You · Owner</p>
+                  </div>
+                </div>
+                {teamMembers.map((m) => (
+                  <div key={m.id} className="flex items-center gap-3 p-2 bg-white/2 rounded-lg">
+                    <div className="w-6 h-6 rounded-full bg-slate-500/20 flex items-center justify-center text-[10px] font-bold text-slate-400 flex-shrink-0">
+                      {(m.user?.name ?? m.inviteEmail)[0].toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-slate-300 truncate">{m.user?.name ?? m.inviteEmail}</p>
+                      <p className="text-[10px] text-slate-600 capitalize">
+                        {m.role} · {m.acceptedAt ? "Active" : "Invite pending"}
+                      </p>
+                    </div>
+                    <button onClick={() => removeTeamMember(m.id)} className="text-slate-700 hover:text-rose-400 transition-colors">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-16 text-center">
+                <p className="text-xs text-slate-600">No team members yet. Invite someone to collaborate.</p>
+              </div>
+            )}
+          </div>
+
+          {/* Google Search Console */}
+          <div className="bg-[#080d1a] border border-white/5 rounded-xl p-5">
+            <div className="flex items-center gap-2 mb-1">
+              <h2 className="text-sm font-semibold text-white">Google Search Console</h2>
+              <span className="text-[10px] text-blue-400 bg-blue-500/10 border border-blue-500/20 rounded-full px-2 py-0.5">Growth+</span>
+            </div>
+            <p className="text-[10px] text-slate-500 mb-3">Connect your Google account to see real keyword rankings and click data alongside AI visibility scores.</p>
+
+            {gscConnected === false && (
+              <a
+                href="/api/auth/google"
+                className="inline-flex items-center gap-2 bg-white/5 hover:bg-white/8 border border-white/10 rounded-lg px-4 py-2 text-xs text-white transition-all"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none">
+                  <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                  <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                  <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+                  <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                </svg>
+                Connect Google Account
+              </a>
+            )}
+
+            {gscConnected === true && (
+              <div>
+                {/* Site picker if no site linked yet or multiple options */}
+                {!gscData?.siteUrl && gscSiteList.length > 0 && (
+                  <div className="mb-3">
+                    <p className="text-[10px] text-slate-400 mb-1.5">Select which GSC property to use for this site:</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {gscSiteList.map((s) => (
+                        <button
+                          key={s}
+                          onClick={() => linkGSCSite(s)}
+                          className="text-[10px] bg-white/5 hover:bg-indigo-500/15 text-slate-400 hover:text-indigo-400 border border-white/10 hover:border-indigo-500/20 rounded-lg px-2.5 py-1 transition-all"
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {gscData?.queries && gscData.queries.length > 0 && (
+                  <>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-[11px] text-slate-400">Top Keywords <span className="text-slate-600">(last 28 days)</span></p>
+                      <button onClick={refreshGSC} disabled={gscLoading} className="text-slate-600 hover:text-slate-400 transition-colors">
+                        {gscLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                    <div className="overflow-x-auto mb-4">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="text-slate-500 border-b border-white/5">
+                            <th className="text-left font-medium pb-2 pr-4">Query</th>
+                            <th className="text-right font-medium pb-2 pr-3">Clicks</th>
+                            <th className="text-right font-medium pb-2 pr-3">Impr.</th>
+                            <th className="text-right font-medium pb-2 pr-3">CTR</th>
+                            <th className="text-right font-medium pb-2">Position</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                          {gscData.queries.slice(0, 10).map((q, i) => (
+                            <tr key={i} className="hover:bg-white/2 transition-colors">
+                              <td className="py-2 pr-4 text-slate-300 max-w-[200px] truncate">{q.query}</td>
+                              <td className="py-2 pr-3 text-right text-white font-medium">{q.clicks.toLocaleString()}</td>
+                              <td className="py-2 pr-3 text-right text-slate-400">{q.impressions.toLocaleString()}</td>
+                              <td className="py-2 pr-3 text-right text-slate-400">{q.ctr}%</td>
+                              <td className={cn("py-2 text-right font-medium",
+                                q.position <= 3 ? "text-emerald-400" :
+                                q.position <= 10 ? "text-amber-400" : "text-slate-500"
+                              )}>{q.position}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+
+                {gscConnected && !gscData?.queries && (
+                  <p className="text-[10px] text-slate-500 mb-3">Connected. {gscSiteList.length === 0 ? "No Search Console properties found for this account." : "Select a property above to load keyword data."}</p>
+                )}
+
+                <button
+                  onClick={disconnectGSC}
+                  className="text-[10px] text-slate-600 hover:text-rose-400 transition-colors"
+                >
+                  Disconnect Google account
+                </button>
+              </div>
+            )}
+          </div>
 
           {/* Slack Webhook Settings */}
           <div className="bg-[#080d1a] border border-white/5 rounded-xl p-5">

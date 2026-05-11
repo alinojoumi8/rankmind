@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stripe } from "@/lib/billing";
 import { prisma } from "@/lib/prisma";
+import { sendTrialEndingEmail, sendPaymentFailedEmail } from "@/lib/email";
 import type Stripe from "stripe";
 
 // Must use raw body for Stripe signature verification
@@ -57,6 +58,54 @@ export async function POST(req: NextRequest) {
             planCurrentPeriodEnd: null,
           },
         });
+        break;
+      }
+
+      case "customer.subscription.trial_will_end": {
+        // Fires 3 days before trial ends
+        const sub = event.data.object as Stripe.Subscription;
+        const userId = sub.metadata?.userId;
+        const plan = sub.metadata?.plan ?? "growth";
+        if (!userId) break;
+
+        const user = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { email: true, name: true, weeklyEmailEnabled: true },
+        });
+        if (!user) break;
+
+        const trialEnd = sub.trial_end;
+        const daysLeft = trialEnd
+          ? Math.max(1, Math.round((trialEnd * 1000 - Date.now()) / 86400000))
+          : 3;
+
+        const planName = plan.charAt(0).toUpperCase() + plan.slice(1);
+        await sendTrialEndingEmail(
+          user.email,
+          user.name ?? user.email.split("@")[0],
+          daysLeft,
+          planName
+        ).catch(() => {});
+        break;
+      }
+
+      case "invoice.payment_failed": {
+        const invoice = event.data.object as Stripe.Invoice;
+        const customerId = invoice.customer as string;
+        if (!customerId) break;
+
+        const user = await prisma.user.findFirst({
+          where: { stripeCustomerId: customerId },
+          select: { id: true, email: true, name: true, plan: true },
+        });
+        if (!user) break;
+
+        const planName = user.plan.charAt(0).toUpperCase() + user.plan.slice(1);
+        await sendPaymentFailedEmail(
+          user.email,
+          user.name ?? user.email.split("@")[0],
+          planName
+        ).catch(() => {});
         break;
       }
     }

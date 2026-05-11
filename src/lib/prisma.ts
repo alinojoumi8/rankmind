@@ -23,6 +23,16 @@ const BILLING_MIGRATIONS = [
   // Shareable reports table
   `CREATE TABLE IF NOT EXISTS "Report" ("id" TEXT NOT NULL PRIMARY KEY, "siteId" TEXT NOT NULL, "token" TEXT NOT NULL, "title" TEXT NOT NULL, "snapshotData" TEXT NOT NULL, "viewCount" INTEGER NOT NULL DEFAULT 0, "expiresAt" DATETIME, "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "Report_siteId_fkey" FOREIGN KEY ("siteId") REFERENCES "Site" ("id") ON DELETE CASCADE ON UPDATE CASCADE)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "Report_token_key" ON "Report"("token")`,
+  // Google Search Console OAuth tokens on User
+  "ALTER TABLE User ADD COLUMN googleAccessToken TEXT",
+  "ALTER TABLE User ADD COLUMN googleRefreshToken TEXT",
+  // Google Search Console property URL on Site
+  "ALTER TABLE Site ADD COLUMN googleSearchConsoleSite TEXT",
+  // User preferences
+  "ALTER TABLE User ADD COLUMN weeklyEmailEnabled INTEGER NOT NULL DEFAULT 1",
+  // Team members table
+  `CREATE TABLE IF NOT EXISTS "TeamMember" ("id" TEXT NOT NULL PRIMARY KEY, "siteId" TEXT NOT NULL, "invitedByUserId" TEXT NOT NULL, "userId" TEXT, "role" TEXT NOT NULL DEFAULT 'editor', "inviteEmail" TEXT NOT NULL, "inviteToken" TEXT NOT NULL, "invitedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, "acceptedAt" DATETIME, CONSTRAINT "TeamMember_siteId_fkey" FOREIGN KEY ("siteId") REFERENCES "Site" ("id") ON DELETE CASCADE ON UPDATE CASCADE, CONSTRAINT "TeamMember_invitedByUserId_fkey" FOREIGN KEY ("invitedByUserId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "TeamMember_inviteToken_key" ON "TeamMember"("inviteToken")`,
 ];
 
 async function applyMigrations(client: PrismaClient) {

@@ -2,69 +2,71 @@
 
 import { useState } from "react";
 import { Check, Zap } from "lucide-react";
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 const plans = [
   {
-    name: "Starter",
-    monthlyPrice: 49,
-    annualPrice: 39,
-    desc: "Perfect for solo founders and small businesses getting started with AI visibility.",
+    name: "Free",
+    monthlyPrice: 0,
+    annualPrice: 0,
+    desc: "Get started with AI visibility monitoring at no cost.",
     features: [
       "1 website",
-      "GEO Scout (3 LLMs)",
-      "Schema Architect (auto)",
-      "Site Doctor (monthly crawl)",
-      "5 AI content briefs/month",
+      "5 agent runs / month",
+      "GEO Scout agent",
+      "Site Doctor agent",
       "Basic dashboard",
-      "Email support",
     ],
-    notIncluded: ["Content auto-publish", "Authority Builder", "API access"],
-    cta: "Start Free Trial",
+    notIncluded: ["Content Architect", "Keyword Intel", "Authority Builder", "Competitor tracking"],
+    cta: "Get Started Free",
     popular: false,
     color: "slate",
+    href: "/signup",
   },
   {
     name: "Growth",
-    monthlyPrice: 149,
-    annualPrice: 119,
-    desc: "The complete AI marketing suite for growing businesses serious about visibility.",
+    monthlyPrice: 49,
+    annualPrice: 39,
+    desc: "The complete AI marketing suite for growing businesses.",
     features: [
       "3 websites",
-      "All 7 AI agents active",
-      "GEO Scout (all 5 LLMs, daily)",
-      "20 AI content pieces/month",
-      "Auto-publish to any CMS",
-      "Authority Builder (10 outreach/mo)",
-      "White-label PDF reports",
-      "Priority support",
-      "Agency sub-accounts (3)",
+      "Unlimited agent runs",
+      "All 5 core AI agents",
+      "Competitor citation tracking",
+      "Weekly email reports",
+      "Historical analytics charts",
+      "Shareable client reports",
+      "Google Search Console integration",
+      "Team members (up to 3)",
     ],
-    notIncluded: ["API access", "Custom agent training"],
-    cta: "Start Free Trial",
+    notIncluded: ["Slack webhooks", "Authority Builder", "Campaign Intel"],
+    cta: "Start 14-Day Free Trial",
     popular: true,
     color: "indigo",
+    href: "/signup",
   },
   {
     name: "Agency",
-    monthlyPrice: 399,
-    annualPrice: 319,
-    desc: "Power your agency with RankMind. Manage all your clients from one command center.",
+    monthlyPrice: 199,
+    annualPrice: 159,
+    desc: "Unlimited power for agencies managing multiple clients.",
     features: [
-      "15 websites",
-      "All 7 AI agents + custom workflows",
-      "Unlimited content generation",
-      "Unlimited outreach",
-      "API access",
-      "Dedicated onboarding call",
-      "Slack support channel",
-      "Custom branded reports",
-      "Reseller license",
+      "Unlimited websites",
+      "Unlimited agent runs",
+      "All 7 AI agents",
+      "White-label PDF exports",
+      "Slack webhook notifications",
+      "Unlimited team members",
+      "Priority support",
+      "Campaign Intel agent",
+      "Authority Builder agent",
     ],
     notIncluded: [],
-    cta: "Start Free Trial",
+    cta: "Start 14-Day Free Trial",
     popular: false,
     color: "violet",
+    href: "/signup",
   },
 ];
 
@@ -159,16 +161,17 @@ export default function Pricing() {
               </div>
 
               {/* CTA */}
-              <button
+              <Link
+                href={plan.href}
                 className={cn(
-                  "w-full py-3 rounded-xl text-sm font-semibold mb-6 transition-all",
+                  "w-full py-3 rounded-xl text-sm font-semibold mb-6 transition-all block text-center",
                   plan.popular
                     ? "btn-primary text-white"
                     : "bg-white/8 hover:bg-white/12 text-white border border-white/10 hover:border-white/20"
                 )}
               >
                 {plan.cta}
-              </button>
+              </Link>
 
               {/* Features */}
               <ul className="space-y-2.5">

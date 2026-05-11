@@ -17,10 +17,17 @@ model User {
   stripeSubscriptionId     String?   @unique
   stripeSubscriptionStatus String?                      // active | canceled | past_due | trialing
   planCurrentPeriodEnd     DateTime?
+  // Google Search Console OAuth
+  googleAccessToken        String?
+  googleRefreshToken       String?
+  // Preferences
+  weeklyEmailEnabled       Boolean   @default(true)
   createdAt                DateTime  @default(now())
   updatedAt                DateTime  @updatedAt
   sites                    Site[]
   sessions                 Session[]
+  teamMemberships          TeamMember[] @relation("TeamMemberUser")
+  teamInvitesSent          TeamMember[] @relation("TeamMemberInviter")
 }
 
 model Session {
@@ -44,8 +51,9 @@ model Site {
   scheduleFrequency   String    @default("weekly") // weekly | daily
   lastScheduledRunAt  DateTime?
   // Integrations
-  slackWebhookUrl     String?
-  createdAt           DateTime  @default(now())
+  slackWebhookUrl          String?
+  googleSearchConsoleSite  String?   // e.g. "sc-domain:example.com" or "https://example.com/"
+  createdAt                DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
   user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   agentRuns   AgentRun[]
@@ -55,6 +63,7 @@ model Site {
   metrics     SiteMetric[]
   competitors Competitor[]
   reports     Report[]
+  teamMembers TeamMember[]
 
   @@unique([userId, domain])
 }
@@ -162,4 +171,19 @@ model Report {
   expiresAt    DateTime?
   createdAt    DateTime @default(now())
   site         Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+}
+
+model TeamMember {
+  id              String    @id @default(cuid())
+  siteId          String
+  invitedByUserId String
+  userId          String?   // null until invite accepted
+  role            String    @default("editor") // owner | editor | viewer
+  inviteEmail     String
+  inviteToken     String    @unique
+  invitedAt       DateTime  @default(now())
+  acceptedAt      DateTime?
+  site            Site      @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  invitedBy       User      @relation("TeamMemberInviter", fields: [invitedByUserId], references: [id], onDelete: Cascade)
+  user            User?     @relation("TeamMemberUser", fields: [userId], references: [id], onDelete: SetNull)
 }

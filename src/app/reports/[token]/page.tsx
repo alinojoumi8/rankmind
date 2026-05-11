@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { Loader2, Zap, Globe, BarChart3, Shield, FileText, Users, ExternalLink } from "lucide-react";
+import { Loader2, Zap, Globe, BarChart3, Shield, FileText, Users, ExternalLink, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ReportData {
@@ -102,12 +102,22 @@ export default function ReportPage() {
               Rank<span className="bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent">Mind</span>
             </span>
           </div>
-          <div className="text-right">
-            <div className="text-xs text-slate-500">{report.title}</div>
-            <div className="text-[11px] text-slate-600">
-              Generated {new Date(report.createdAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
-              {" · "}{report.viewCount} views
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <div className="text-xs text-slate-500">{report.title}</div>
+              <div className="text-[11px] text-slate-600">
+                Generated {new Date(report.createdAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+                {" · "}{report.viewCount} views
+              </div>
             </div>
+            <a
+              href={`/api/reports/${token}/pdf`}
+              download
+              className="flex items-center gap-1.5 text-xs font-medium bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-400 border border-indigo-500/20 rounded-lg px-3 py-1.5 transition-all"
+            >
+              <Download className="w-3 h-3" />
+              PDF
+            </a>
           </div>
         </div>
 
