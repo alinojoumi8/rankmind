@@ -40,6 +40,9 @@ interface Site {
   domain: string;
   name: string;
   industry?: string | null;
+  scheduleEnabled?: boolean;
+  scheduleFrequency?: string;
+  lastScheduledRunAt?: string | null;
 }
 
 interface DashData {
@@ -227,6 +230,7 @@ export default function DashboardPage() {
   const [showAddSite, setShowAddSite] = useState(false);
   const [agentRunning, setAgentRunning] = useState<Record<string, boolean>>({});
   const [agentToast, setAgentToast] = useState<{ msg: string; ok: boolean } | null>(null);
+  const [scheduleLoading, setScheduleLoading] = useState(false);
 
   const loadDashboard = useCallback(async (siteId: string) => {
     const res = await fetch(`/api/dashboard?siteId=${siteId}`);
@@ -279,6 +283,36 @@ export default function DashboardPage() {
     } finally {
       setAgentRunning((p) => ({ ...p, [agentId]: false }));
       setTimeout(() => setAgentToast(null), 5000);
+    }
+  }
+
+  async function toggleSchedule() {
+    if (!currentSite) return;
+    setScheduleLoading(true);
+    try {
+      const newEnabled = !currentSite.scheduleEnabled;
+      const res = await fetch("/api/sites/schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          siteId: currentSite.id,
+          enabled: newEnabled,
+          frequency: currentSite.scheduleFrequency ?? "weekly",
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setCurrentSite((s) => s ? { ...s, scheduleEnabled: data.scheduleEnabled } : s);
+        setSites((prev) => prev.map((s) => s.id === currentSite.id ? { ...s, scheduleEnabled: data.scheduleEnabled } : s));
+        setAgentToast({ msg: data.scheduleEnabled ? "Auto-Run enabled — agents run every Monday" : "Auto-Run disabled", ok: true });
+      } else {
+        setAgentToast({ msg: data.error ?? "Failed to update schedule", ok: false });
+      }
+    } catch {
+      setAgentToast({ msg: "Network error", ok: false });
+    } finally {
+      setScheduleLoading(false);
+      setTimeout(() => setAgentToast(null), 4000);
     }
   }
 
@@ -618,6 +652,34 @@ export default function DashboardPage() {
                     </div>
                   );
                 })}
+              </div>
+
+              {/* Auto-Run toggle */}
+              <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between">
+                <div>
+                  <div className="text-[11px] font-medium text-slate-300">Auto-Run weekly</div>
+                  <div className="text-[10px] text-slate-600 mt-0.5">
+                    {currentSite?.scheduleEnabled
+                      ? `On · Every Monday${currentSite.lastScheduledRunAt ? ` · Last: ${timeAgo(currentSite.lastScheduledRunAt)}` : ""}`
+                      : "Off · Growth/Agency plans"}
+                  </div>
+                </div>
+                <button
+                  onClick={toggleSchedule}
+                  disabled={scheduleLoading}
+                  className={cn(
+                    "relative w-9 h-5 rounded-full transition-all flex-shrink-0 disabled:opacity-50",
+                    currentSite?.scheduleEnabled ? "bg-indigo-500" : "bg-white/10"
+                  )}
+                >
+                  {scheduleLoading
+                    ? <Loader2 className="w-3 h-3 text-white animate-spin absolute top-1 left-3" />
+                    : <span className={cn(
+                        "absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all",
+                        currentSite?.scheduleEnabled ? "left-[18px]" : "left-0.5"
+                      )} />
+                  }
+                </button>
               </div>
             </div>
 

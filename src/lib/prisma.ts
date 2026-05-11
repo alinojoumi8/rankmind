@@ -1,13 +1,18 @@
 import path from "path";
 import { PrismaClient } from "@prisma/client";
 
-// New columns added to User — ALTER TABLE is idempotent (errors ignored on subsequent runs)
+// All schema additions — ALTER TABLE is idempotent (errors ignored on subsequent runs)
 const BILLING_MIGRATIONS = [
+  // Billing columns on User
   "ALTER TABLE User ADD COLUMN plan TEXT NOT NULL DEFAULT 'free'",
   "ALTER TABLE User ADD COLUMN stripeCustomerId TEXT",
   "ALTER TABLE User ADD COLUMN stripeSubscriptionId TEXT",
   "ALTER TABLE User ADD COLUMN stripeSubscriptionStatus TEXT",
   "ALTER TABLE User ADD COLUMN planCurrentPeriodEnd TEXT",
+  // Schedule columns on Site
+  "ALTER TABLE Site ADD COLUMN scheduleEnabled INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE Site ADD COLUMN scheduleFrequency TEXT NOT NULL DEFAULT 'weekly'",
+  "ALTER TABLE Site ADD COLUMN lastScheduledRunAt TEXT",
 ];
 
 async function applyMigrations(client: PrismaClient) {
