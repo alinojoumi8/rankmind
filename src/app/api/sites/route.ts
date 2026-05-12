@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { currentUser } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
@@ -13,11 +14,15 @@ const createSiteSchema = z.object({
   displayName: z.string().optional(),
 });
 
-// Ensure a User row exists for the given userId (idempotent)
+// Ensure a User row exists for the given userId — also syncs name/email from Clerk
 async function ensureUser(userId: string, email?: string, displayName?: string) {
   await prisma.user.upsert({
     where: { id: userId },
-    update: {},
+    update: {
+      // Update name/email if we have real values (overwrites placeholder)
+      ...(email && !email.includes("@clerk.rankmind.ai") ? { email } : {}),
+      ...(displayName ? { name: displayName } : {}),
+    },
     create: {
       id: userId,
       email: email ?? `${userId}@clerk.rankmind.ai`,
@@ -33,8 +38,19 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "userId required" }, { status: 400 });
   }
 
-  // Auto-create user row if this is a Clerk user hitting the API for the first time
-  await ensureUser(userId).catch(() => {});
+  // Sync real name/email from Clerk on every request (cheap — cached by Clerk SDK)
+  try {
+    const clerkUser = await currentUser();
+    if (clerkUser && clerkUser.id === userId) {
+      const email = clerkUser.primaryEmailAddress?.emailAddress;
+      const name = [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") || undefined;
+      await ensureUser(userId, email, name);
+    } else {
+      await ensureUser(userId);
+    }
+  } catch {
+    await ensureUser(userId).catch(() => {});
+  }
 
   const sites = await prisma.site.findMany({
     where: { userId },

@@ -77,18 +77,23 @@ export const PLANS: Record<Plan, {
 export async function getUserPlan(userId: string): Promise<Plan> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { plan: true, stripeSubscriptionStatus: true, planCurrentPeriodEnd: true },
+    select: { plan: true, stripeSubscriptionStatus: true, stripeSubscriptionId: true, planCurrentPeriodEnd: true },
   });
   if (!user) return "free";
 
-  // Downgrade if subscription lapsed
-  if (user.plan !== "free") {
-    const isActive = user.stripeSubscriptionStatus === "active" ||
-                     user.stripeSubscriptionStatus === "trialing";
-    if (!isActive) return "free";
+  if (user.plan === "free") return "free";
+
+  // Admin-granted plan (no Stripe subscription) — honour directly, no expiry check
+  if (!user.stripeSubscriptionId) {
+    return (user.plan as Plan);
   }
 
-  return (user.plan as Plan) ?? "free";
+  // Stripe-backed subscription — must be active or trialing
+  const isActive = user.stripeSubscriptionStatus === "active" ||
+                   user.stripeSubscriptionStatus === "trialing";
+  if (!isActive) return "free";
+
+  return (user.plan as Plan);
 }
 
 export async function getMonthlyRunCount(userId: string): Promise<number> {

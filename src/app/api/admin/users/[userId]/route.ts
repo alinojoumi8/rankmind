@@ -108,10 +108,28 @@ export async function POST(
       return NextResponse.json({ error: "Invalid plan" }, { status: 400 });
     }
 
-    // Update DB immediately
+    // When admin sets plan directly (no Stripe), clear stripe IDs so getUserPlan
+    // uses the admin-bypass path (plan is honoured without subscription check).
+    // If user has an active Stripe subscription, cancel it first.
+    if (plan === "free" && user.stripeSubscriptionId) {
+      await stripe.subscriptions.cancel(user.stripeSubscriptionId).catch(() => {});
+    }
+
     await prisma.user.update({
       where: { id: userId },
-      data: { plan },
+      data: {
+        plan,
+        // Clear Stripe fields so the admin-granted path in getUserPlan applies
+        ...(plan !== "free" ? {
+          stripeSubscriptionId: null,
+          stripeSubscriptionStatus: null,
+          planCurrentPeriodEnd: null,
+        } : {
+          stripeSubscriptionId: null,
+          stripeSubscriptionStatus: "canceled",
+          planCurrentPeriodEnd: null,
+        }),
+      },
     });
 
     return NextResponse.json({ ok: true, plan });
