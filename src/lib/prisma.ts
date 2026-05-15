@@ -33,6 +33,8 @@ const BILLING_MIGRATIONS = [
   // Team members table
   `CREATE TABLE IF NOT EXISTS "TeamMember" ("id" TEXT NOT NULL PRIMARY KEY, "siteId" TEXT NOT NULL, "invitedByUserId" TEXT NOT NULL, "userId" TEXT, "role" TEXT NOT NULL DEFAULT 'editor', "inviteEmail" TEXT NOT NULL, "inviteToken" TEXT NOT NULL, "invitedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, "acceptedAt" DATETIME, CONSTRAINT "TeamMember_siteId_fkey" FOREIGN KEY ("siteId") REFERENCES "Site" ("id") ON DELETE CASCADE ON UPDATE CASCADE, CONSTRAINT "TeamMember_invitedByUserId_fkey" FOREIGN KEY ("invitedByUserId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "TeamMember_inviteToken_key" ON "TeamMember"("inviteToken")`,
+  // Authority opportunities tracking table
+  `CREATE TABLE IF NOT EXISTS "AuthorityOpportunity" ("id" TEXT NOT NULL PRIMARY KEY, "siteId" TEXT NOT NULL, "type" TEXT NOT NULL, "status" TEXT NOT NULL DEFAULT 'identified', "priority" TEXT NOT NULL DEFAULT 'medium', "targetUrl" TEXT, "targetDomain" TEXT, "contactEmail" TEXT, "pitchAngle" TEXT, "outreachCopy" TEXT, "notes" TEXT, "agentRunId" TEXT, "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "AuthorityOpportunity_siteId_fkey" FOREIGN KEY ("siteId") REFERENCES "Site" ("id") ON DELETE CASCADE ON UPDATE CASCADE)`,
 ];
 
 async function applyMigrations(client: PrismaClient) {

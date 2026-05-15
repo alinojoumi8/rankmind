@@ -62,8 +62,9 @@ model Site {
   siteIssues  SiteIssue[]
   metrics     SiteMetric[]
   competitors Competitor[]
-  reports     Report[]
-  teamMembers TeamMember[]
+  reports               Report[]
+  teamMembers           TeamMember[]
+  authorityOpportunities AuthorityOpportunity[]
 
   @@unique([userId, domain])
 }
@@ -186,4 +187,22 @@ model TeamMember {
   site            Site      @relation(fields: [siteId], references: [id], onDelete: Cascade)
   invitedBy       User      @relation("TeamMemberInviter", fields: [invitedByUserId], references: [id], onDelete: Cascade)
   user            User?     @relation("TeamMemberUser", fields: [userId], references: [id], onDelete: SetNull)
+}
+
+model AuthorityOpportunity {
+  id           String    @id @default(cuid())
+  siteId       String
+  type         String    // guest-post | resource-link | broken-link | digital-pr | podcast | community | unlinked-mention
+  status       String    @default("identified") // identified | researching | drafting | outreach-sent | won | lost | skipped
+  priority     String    @default("medium")     // high | medium | low
+  targetUrl    String?
+  targetDomain String?
+  contactEmail String?
+  pitchAngle   String?
+  outreachCopy String?
+  notes        String?
+  agentRunId   String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  site         Site      @relation(fields: [siteId], references: [id], onDelete: Cascade)
 }

@@ -31,9 +31,11 @@ import {
   X,
   CheckCircle2,
   Circle,
+  Shield,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
+import AuthorityHub from "@/components/AuthorityHub";
 import {
   ResponsiveContainer,
   LineChart,
@@ -337,7 +339,8 @@ export default function DashboardPage() {
   const { signOut } = useClerk();
 
   const [activeTab, setActiveTab] = useState("overview");
-  const tabs = ["overview", "agents", "content", "citations", "keywords", "reports"];
+  const tabs = ["overview", "agents", "content", "citations", "keywords", "reports", "authority"];
+  const [userPlan, setUserPlan] = useState<string>("free");
 
   const [sites, setSites] = useState<Site[]>([]);
   const [currentSite, setCurrentSite] = useState<Site | null>(null);
@@ -415,7 +418,14 @@ export default function DashboardPage() {
     async function init() {
       try {
         // Upsert Clerk user into our DB, then load their sites
-        const sitesRes = await fetch(`/api/sites?userId=${clerkUser!.id}`);
+        const [sitesRes, billingRes] = await Promise.all([
+          fetch(`/api/sites?userId=${clerkUser!.id}`),
+          fetch("/api/billing/status"),
+        ]);
+        if (billingRes.ok) {
+          const bd = await billingRes.json();
+          setUserPlan(bd.plan ?? "free");
+        }
         if (sitesRes.ok) {
           const { sites } = await sitesRes.json();
           setSites(sites ?? []);
@@ -850,6 +860,7 @@ export default function DashboardPage() {
             { icon: Search,     label: "Citations",  id: "citations" },
             { icon: BarChart3,  label: "Keywords",   id: "keywords" },
             { icon: TrendingUp, label: "Reports",    id: "reports" },
+            { icon: Shield,     label: "Authority",  id: "authority" },
           ].map((item) => (
             <button
               key={item.id}
@@ -1709,6 +1720,11 @@ export default function DashboardPage() {
               })()}
             </div>
           )}
+
+          {/* Earned Authority Hub */}
+          <div className="bg-[#080d1a] border border-white/5 rounded-xl p-5">
+            <AuthorityHub siteId={currentSite!.id} userPlan={userPlan} />
+          </div>
 
           {/* Team Management */}
           <div className="bg-[#080d1a] border border-white/5 rounded-xl p-5">

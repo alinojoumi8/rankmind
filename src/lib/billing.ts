@@ -59,6 +59,8 @@ export const PLANS: Record<Plan, {
     agents: [
       "geo-scout", "site-doctor", "content-architect",
       "schema-architect", "keyword-intel", "authority-builder", "campaign-intel",
+      // Earned Authority agents (Agency-only)
+      "authority-audit", "prospect-research", "outreach-writer", "linkable-asset",
     ],
     features: [
       "Unlimited websites",
